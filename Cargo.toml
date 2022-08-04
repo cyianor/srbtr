@@ -1,0 +1,11 @@
+[package]
+name = "srbtr"
+version = "0.1.0"
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+unicode_reader = "1.0.2"
+unicode-normalization = "0.1.21"
+maplit = "1.0.2"
