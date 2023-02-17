@@ -1,8 +1,7 @@
 use std::fs::File;
 use std::io::BufReader;
 
-mod transcoder;
-use transcoder::Transcoder;
+use srbtr::transcoder::Transcoder;
 
 fn main() -> Result<(), std::io::Error> {
     let f = File::open("test.txt")?;
