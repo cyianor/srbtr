@@ -7,76 +7,81 @@ use unicode_normalization::UnicodeNormalization;
 use unicode_reader::{CodePoints, Graphemes};
 
 /// Wraps a `String`-oriented reader and yields the data one cyrillic character at a time.
-pub struct Transcoder<R: Iterator<Item = io::Result<String>>> {
+pub struct Transcoder<R>
+where
+    R: Iterator<Item = io::Result<String>>,
+{
     input: Peekable<R>,
     latin_to_cyrillic: HashMap<String, String>,
     composite_chars: HashMap<String, String>,
 }
 
-impl<R: Iterator<Item = io::Result<String>>> Iterator for Transcoder<R> {
-    /// The type of the elements being iterated over: a `io::Result` with one
-    /// cyrillic character, or any I/O error raised by the underlying reader
+impl<R> Iterator for Transcoder<R>
+where
+    R: Iterator<Item = io::Result<String>>,
+{
+    /// The type of the elements being iterated over: a `io::Result` with
+    /// tuples of input (latin) and output (cyrillic) characters,
+    /// or any I/O error raised by the underlying reader
     type Item = io::Result<(String, String)>;
 
-    /// Get the next cyrillic character from the stream.
+    /// Get the next character from the stream.
     fn next(&mut self) -> Option<Self::Item> {
-        let mut ch = match self.input.next() {
-            Some(r) => match r {
-                Ok(v) => v.nfc().collect::<String>(),
-                Err(err) => return Some(Err(err)),
-            },
-            None => return None,
+        let latin = match self.input.next()? {
+            Ok(v) => v.nfc().collect::<String>(),
+            Err(err) => return Some(Err(err)),
         };
 
-        let mut orig = ch.clone();
-
-        if self.composite_chars.contains_key(&ch) {
-            ch = self.composite_chars[&ch].clone();
-        } else if matches!(ch.as_str(), "D" | "d" | "L" | "l" | "N" | "n") {
-            match self.input.peek() {
-                Some(r) => {
-                    // Lower-case on second letter to deal with full upper case
-                    // of digraphs i.e. "LJ"
-                    match r {
-                        Ok(v) => {
-                            let ch2 = v.clone().nfc().collect::<String>().to_lowercase();
-                            let digraph = ch.clone() + &ch2;
-
-                            // Officially, there is no letter "dj", but it is sometimes used
-                            // instead of "đ"
-                            if matches!(digraph.as_str(), "Dj" | "dj") {
-                                match digraph.as_str() {
-                                    "Dj" => ch = "Ð".to_string(),
-                                    "dj" => ch = "đ".to_string(),
-                                    _ => {}
+        let (original, modified) = if self.composite_chars.contains_key(&latin) {
+            (latin.clone(), self.composite_chars[&latin].clone())
+        } else if matches!(latin.as_str(), "D" | "d" | "L" | "l" | "N" | "n") {
+            // Lower-case on second letter to deal with full upper case
+            // of digraphs i.e. "LJ"
+            if let Some(v) = self.input.peek() {
+                match v {
+                    Ok(next_grapheme) => {
+                        let digraph =
+                            latin.clone() + &next_grapheme.nfc().collect::<String>().to_lowercase();
+                        // Officially, there is no letter "dj", but it is sometimes used
+                        // instead of "đ"
+                        if let Some(out) = match digraph.as_str() {
+                            "Dj" => Some(("Dj".to_string(), "Ð".to_string())),
+                            "dj" => Some(("dj".to_string(), "đ".to_string())),
+                            _ => {
+                                if self.latin_to_cyrillic.contains_key(&digraph) {
+                                    Some((digraph.clone(), digraph))
+                                } else {
+                                    None
                                 }
-
-                                orig = digraph.clone();
-                                self.input.next();
                             }
-
-                            if self.latin_to_cyrillic.contains_key(&digraph) {
-                                ch.push_str(&ch2);
-                                orig = digraph.clone();
-                                self.input.next();
-                            }
+                        } {
+                            self.input.next();
+                            out
+                        } else {
+                            (latin.clone(), latin)
                         }
-                        Err(_) => {}
-                    };
+                    }
+                    Err(_) => (latin.clone(), latin),
                 }
-                None => {}
-            };
-        }
-
-        if self.latin_to_cyrillic.contains_key(&ch) {
-            return Some(Ok((orig, self.latin_to_cyrillic[&ch].clone())));
+            } else {
+                (latin.clone(), latin)
+            }
         } else {
-            return Some(Ok((orig, ch)));
+            (latin.clone(), latin)
+        };
+
+        if self.latin_to_cyrillic.contains_key(&modified) {
+            Some(Ok((original, self.latin_to_cyrillic[&modified].clone())))
+        } else {
+            Some(Ok((original, modified.clone())))
         }
     }
 }
 
-impl<R: Iterator<Item = io::Result<String>>> From<R> for Transcoder<R> {
+impl<R> From<R> for Transcoder<R>
+where
+    R: Iterator<Item = io::Result<String>>,
+{
     fn from(input: R) -> Transcoder<R> {
         Transcoder {
             input: input.peekable(),

@@ -1,26 +1,27 @@
+use clap::Parser;
 use std::fs::File;
 use std::io::BufReader;
 
 use srbtr::transcoder::Transcoder;
 
+#[derive(Parser)]
+#[command(
+    version,
+    about,
+    long_about = "Tool for transliterating Serbian latin to Serbian Cyrillic text"
+)]
+struct Args {
+    /// Path to source file
+    path: Option<String>,
+}
+
 fn main() -> Result<(), std::io::Error> {
-    let f = File::open("test.txt")?;
+    let args = Args::parse();
+    let f = File::open(args.path.expect("expected file path"))?;
     let input = BufReader::new(f);
 
-    let mut input_str = String::new();
-    let mut output_str = String::new();
-
-    let tr = Transcoder::from(input);
-
-    for ch in tr {
-        match ch {
-            Ok(v) => {
-                input_str.push_str(&v.0);
-                output_str.push_str(&v.1);
-            }
-            Err(err) => return Err(err),
-        }
-    }
+    let (input_str, output_str): (String, String) =
+        Transcoder::from(input).map(|c| c.unwrap()).unzip();
 
     println!("{}", input_str);
     println!("{}", output_str);
