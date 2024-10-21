@@ -32,8 +32,8 @@ where
             Err(err) => return Some(Err(err)),
         };
 
-        let (original, modified) = if self.composite_chars.contains_key(&latin) {
-            (latin.clone(), self.composite_chars[&latin].clone())
+        let prepared = if self.composite_chars.contains_key(&latin) {
+            Some((latin.clone(), self.composite_chars[&latin].clone()))
         } else if matches!(latin.as_str(), "D" | "d" | "L" | "l" | "N" | "n") {
             // Lower-case on second letter to deal with full upper case
             // of digraphs i.e. "LJ"
@@ -45,35 +45,34 @@ where
                         // Officially, there is no letter "dj", but it is sometimes used
                         // instead of "đ"
                         if let Some(out) = match digraph.as_str() {
-                            "Dj" => Some(("Dj".to_string(), "Ð".to_string())),
-                            "dj" => Some(("dj".to_string(), "đ".to_string())),
-                            _ => {
-                                if self.latin_to_cyrillic.contains_key(&digraph) {
-                                    Some((digraph.clone(), digraph))
-                                } else {
-                                    None
-                                }
+                            "Dj" => Some((digraph, "Ð".to_string())),
+                            "dj" => Some((digraph, "đ".to_string())),
+                            _ if self.latin_to_cyrillic.contains_key(&digraph) => {
+                                Some((digraph.clone(), digraph))
                             }
+                            _ => None,
                         } {
                             self.input.next();
-                            out
+                            Some(out)
                         } else {
-                            (latin.clone(), latin)
+                            None
                         }
                     }
-                    Err(_) => (latin.clone(), latin),
+                    Err(_) => None,
                 }
             } else {
-                (latin.clone(), latin)
+                None
             }
         } else {
-            (latin.clone(), latin)
+            None
         };
 
-        if self.latin_to_cyrillic.contains_key(&modified) {
-            Some(Ok((original, self.latin_to_cyrillic[&modified].clone())))
+        let (original, modified) = prepared.unwrap_or((latin.clone(), latin));
+
+        if let Some(mapping) = self.latin_to_cyrillic.get(&modified) {
+            Some(Ok((original, mapping.clone())))
         } else {
-            Some(Ok((original, modified.clone())))
+            Some(Ok((original, modified)))
         }
     }
 }
